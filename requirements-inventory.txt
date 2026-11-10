@@ -1,0 +1,2 @@
+# Version used for the first reproducible inventory; model/GPU dependencies are not needed.
+biopython==1.88
