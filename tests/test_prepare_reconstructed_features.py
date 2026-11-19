@@ -164,6 +164,125 @@ class ReconstructedFeatureInputsTests(unittest.TestCase):
     def prepare(self):
         return pilot.prepare_reconstructed(self.args)
 
+    def reconstruct_after_copying_coordinate_snapshot_to_server(self, historical_raw_root=None):
+        """Run real reconstruction on current raw data with historical source paths."""
+        historical_raw_root = str(historical_raw_root or "/old/client/BGC_retrieve/data/raw/curated_datasets")
+        coordinate_metadata = pilot.read_json(self.coordinate / "metadata.json")
+        coordinate_metadata["raw_root"] = historical_raw_root
+        pilot.write_json(self.coordinate / "metadata.json", coordinate_metadata)
+        self.recovered = self.root / "data/processed/reconstructed_on_server"
+        inventory_result = (
+            [{**row, "source_sha256": row["raw_source_sha256"]} for row in self.coordinate_rows],
+            build_inventory.snapshot(self.raw, self.root),
+            {name: pilot.sha256(self.inventory / name) for name in ("samples.tsv", "source_files.tsv")},
+        )
+        args = argparse.Namespace(workspace=self.root, source=self.coordinate, output=self.recovered,
+                                  raw=self.raw, inventory=self.inventory, encoder_project=self.encoder)
+        with mock.patch.object(reconstruct_h, "load_inventory", return_value=inventory_result):
+            reconstruct_h.reconstruct(args)
+        self.args.reconstructed_root = self.recovered
+        current = pilot.read_json(self.recovered / "metadata.json")
+        previous = pilot.read_json(self.recovered / "source_provenance/metadata.json")
+        self.assertEqual(current["raw_root"], str(self.raw))
+        self.assertEqual(previous["raw_root"], historical_raw_root)
+        self.assertNotEqual(current["raw_root"], previous["raw_root"])
+        return historical_raw_root
+
+    def test_reconstruction_rerun_on_server_accepts_historical_raw_root_and_remains_portable(self):
+        historical_raw_root = self.reconstruct_after_copying_coordinate_snapshot_to_server()
+        expected = {row["sample_id"]: row for row in self.coordinate_rows}
+        expected.update({row["sample_id"]: row for row in pilot.read_tsv(self.recovered / "samples.tsv")})
+        queues = []
+        for selection in (["G", "H"], ["H"]):
+            with self.subTest(datasets=selection):
+                self.args.datasets = selection
+                self.args.repaired_root = self.coordinate if "G" in selection else None
+                output = self.root / "data/processed" / ("prepared_" + "".join(selection))
+                self.args.output = output
+                self.prepare()
+                _, metadata, rows = pilot.load_prepared(output)
+                datasets = {self.datasets[key][0] for key in selection}
+                expected_ids = {sid for sid, row in expected.items() if row["dataset"] in datasets}
+                self.assertEqual({row["sample_id"] for row in rows}, expected_ids)
+                self.assertEqual(metadata["status"], "complete")
+                self.assertEqual(metadata["annotation_status"], "needs_review")
+                self.assertEqual(metadata["unresolved_asdomain_count"], 1)
+                self.assertFalse(metadata["annotation_complete"])
+                roots = {self.datasets["H"][0]: str(self.raw)}
+                if "G" in selection:
+                    roots[self.datasets["G"][0]] = historical_raw_root
+                self.assertEqual(metadata["raw_roots"], roots)
+                for row in rows:
+                    original = expected[row["sample_id"]]
+                    for key in ("original_bgc_id", "gcf_raw", "raw_source_sha256"):
+                        self.assertEqual(row[key], original[key])
+                    self.assertEqual(row["source_sha256"], original["processed_sha256"])
+                queues.append((output, rows, metadata["unresolved_sample_ids"]))
+        for source in (self.coordinate, self.recovered, self.raw):
+            source.rename(self.root / (source.name + "-unavailable"))
+        for output, original_rows, review_ids in queues:
+            relocated = self.root / "deployed" / output.name
+            relocated.parent.mkdir(exist_ok=True)
+            output.rename(relocated)
+            with mock.patch.object(build_inventory, "load_parsers", side_effect=AssertionError("no parser imports")):
+                _, metadata, rows = pilot.load_prepared(relocated)
+            self.assertEqual(rows, original_rows)
+            self.assertEqual(metadata["unresolved_sample_ids"], review_ids)
+            self.assertEqual(metadata["unresolved_asdomain_count"], 1)
+
+    def test_server_rerun_rejects_conflicting_ancestral_raw_hash_with_refreshed_manifests(self):
+        self.reconstruct_after_copying_coordinate_snapshot_to_server()
+        self.args.datasets = ["H"]
+        self.args.repaired_root = None
+        ancestor = self.recovered / "source_provenance"
+        rows = pilot.read_tsv(ancestor / "samples.tsv")
+        h_sample = next(row for row in rows if row["dataset"] == self.datasets["H"][0])
+        h_sample["raw_source_sha256"] = "0" * 64
+        self.write_table(ancestor / "samples.tsv", rows)
+        self.refresh_hash(ancestor, "samples.tsv")
+        metadata = pilot.read_json(self.recovered / "metadata.json")
+        metadata["source_metadata_sha256"] = pilot.sha256(ancestor / "metadata.json")
+        for relative in ("source_provenance/samples.tsv", "source_provenance/metadata.json"):
+            metadata["artifact_sha256"][relative] = pilot.sha256(self.recovered / relative)
+        pilot.write_json(self.recovered / "metadata.json", metadata)
+        with self.assertRaisesRegex(ValueError, "identity/sequence provenance differs: raw_source_sha256"):
+            self.prepare()
+        self.assertFalse(self.output.exists())
+
+    def test_server_rerun_still_checks_ancestral_metadata_hash(self):
+        self.reconstruct_after_copying_coordinate_snapshot_to_server()
+        metadata = pilot.read_json(self.recovered / "metadata.json")
+        metadata["source_metadata_sha256"] = "0" * 64
+        pilot.write_json(self.recovered / "metadata.json", metadata)
+        with self.assertRaisesRegex(ValueError, "Coordinate-repair metadata differs"):
+            self.prepare()
+        self.assertFalse(self.output.exists())
+
+    def test_server_rerun_rejects_changed_gbk_even_when_outer_artifact_hash_is_refreshed(self):
+        self.reconstruct_after_copying_coordinate_snapshot_to_server()
+        sample = pilot.read_tsv(self.recovered / "samples.tsv")[0]
+        path = self.recovered / sample["processed_relpath"]
+        path.write_bytes(path.read_bytes() + b"\n")
+        self.refresh_hash(self.recovered, sample["processed_relpath"])
+        with self.assertRaisesRegex(ValueError, "H processed input hash/path differs"):
+            self.prepare()
+        self.assertFalse(self.output.exists())
+
+    def test_h_only_server_rerun_also_protects_historical_ancestral_raw_directory(self):
+        historical = self.root / "old-project/data/raw/curated_datasets"
+        historical.mkdir(parents=True)
+        (historical / "backup.txt").write_bytes(b"historical source must remain unchanged\n")
+        self.reconstruct_after_copying_coordinate_snapshot_to_server(historical)
+        self.args.datasets = ["H"]
+        self.args.repaired_root = None
+        self.args.output = historical / "new_queue"
+        protected_sources = (self.coordinate, self.recovered, self.raw, historical)
+        before = [self.snapshot(path) for path in protected_sources]
+        with self.assertRaisesRegex(ValueError, "new output"):
+            self.prepare()
+        self.assertFalse(self.args.output.exists())
+        self.assertEqual(before, [self.snapshot(path) for path in protected_sources])
+
     def test_h_and_g_use_distinct_sources_and_preserve_reviewed_sample(self):
         before = [self.snapshot(root) for root in (self.raw, self.coordinate, self.recovered)]
         self.prepare()

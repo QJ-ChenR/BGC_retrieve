@@ -366,6 +366,9 @@ def extract(args):
     if prep_metadata.get("source_root"):
         protected.append(Path(prep_metadata["source_root"]).resolve())
     protected.extend(Path(path).resolve() for path in prep_metadata.get("source_roots", {}).values())
+    if prep_metadata["format"] == RECONSTRUCTED_SCHEMA:
+        ancestor = read_json(prepared / "reconstruction_provenance/source_provenance/metadata.json")
+        protected.append(Path(ancestor["raw_root"]).expanduser().resolve())
     if any(output.is_relative_to(path) for path in protected):
         raise ValueError("Feature output must be separate from prepared inputs, repaired sources and raw data")
     config = extraction_config(args, prepared, prep_metadata)

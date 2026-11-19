@@ -1043,11 +1043,30 @@ ablations. These remain outside the current comparison task.
   read_json/read_tsv/sha256 operations then permit only paths inside the relocated
   queue, and loading still succeeds. Source identity relies on content hashes,
   while historical source paths are retained only as provenance.
-- The final combined run passes 47 tests: 13 new preparation, 5 new run
+- The initial bridge's combined run passed 47 tests: 13 new preparation, 5 new run
   orchestration, 11 existing G/H preparation and 18 existing extraction/native
   validator tests. Model subprocesses use stubs in orchestration tests; real
   input checks use CPU parsers only. These are interface/provenance/workflow
   checks, not GPU model inference tests. Log: /tmp/h-bridge-final-tests.log.
+- The user subsequently reported a server-side failure after successfully rerunning
+  H recovery: `Reconstruction raw provenance root differs`. The adapter incorrectly
+  equated the recovery's current raw_root with its embedded coordinate-repair
+  ancestor's historical raw_root. These paths may differ after moving the source
+  snapshot between machines. Keep both recorded paths without editing existing
+  snapshots; validate the metadata hash, sample identities and raw/processed/DNA/
+  protein hashes instead. Preparation and extraction protect both raw locations.
+  The already generated H snapshot remains valid and can be prepared after updating
+  the scripts; the failure occurs before any prepared output is created. Previous
+  portability tests covered moving G or a completed queue, but missed rerunning
+  H recovery on a new machine from an older coordinate-repair snapshot.
+- The regression now passes 52 tests, including five new server-rerun and
+  integrity/protection cases. A temporary full copy of raw/inventory/coordinate
+  inputs was used to rerun actual H recovery with a different current raw_root,
+  then prepare and relocate all G=11/H=90 inputs successfully. All 2941 original
+  raw files and the original source snapshots retain their hashes; no torch or
+  model inference ran. Evidence: /tmp/h-raw-root-regression-tests.log and
+  /tmp/h-raw-root-real-regression.json. Existing server recovery snapshots do
+  not need regeneration or manual metadata edits for this fix.
 
 The 2026-11-02 audit was originally read-only inline Python. Its major counts and
 single-file parser outcomes have now been revalidated by the persistent inventory

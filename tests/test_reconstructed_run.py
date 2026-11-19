@@ -38,6 +38,10 @@ class ReconstructedRunTests(unittest.TestCase):
             "unresolved_asdomain_count": 2, "unresolved_sample_ids": ["h"], "review_policy": "retain",
         }
         pilot.write_json(self.prepared / "metadata.json", self.metadata)
+        ancestry = self.prepared / "reconstruction_provenance/source_provenance"
+        ancestry.mkdir(parents=True)
+        self.ancestor_raw = self.root / "historical_machine_raw"
+        pilot.write_json(ancestry / "metadata.json", {"raw_root": str(self.ancestor_raw)})
         checkpoint = self.root / "fixture.pt"
         checkpoint.write_bytes(b"No real weights are loaded")
         self.args = pilot.build_parser().parse_args([
@@ -127,7 +131,7 @@ class ReconstructedRunTests(unittest.TestCase):
             self.launch()
 
     def test_feature_output_cannot_write_inside_either_source_snapshot(self):
-        for source in (*self.metadata["source_roots"].values(), *self.metadata["raw_roots"].values()):
+        for source in (*self.metadata["source_roots"].values(), *self.metadata["raw_roots"].values(), self.ancestor_raw):
             with self.subTest(source=source):
                 self.args.output = Path(source) / "features"
                 with self.assertRaisesRegex(ValueError, "separate"):

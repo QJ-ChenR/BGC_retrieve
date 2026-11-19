@@ -99,7 +99,11 @@ def _h_rows(root, pilot):
     _repair_metadata(old)
     _require(pilot.sha256(old_root / "metadata.json") == metadata["source_metadata_sha256"],
              "Coordinate-repair metadata differs from reconstruction provenance")
-    _require(metadata["raw_root"] == old["raw_root"], "Reconstruction raw provenance root differs")
+    # Recovery may run on a different machine from the coordinate repair.
+    # Preserve both historical paths; identity is checked by the metadata hash
+    # above and the sample/sequence hashes below, not by machine-local paths.
+    _require(all(isinstance(record.get("raw_root"), str) and record["raw_root"].strip()
+                 for record in (metadata, old)), "Missing reconstruction or coordinate-repair raw provenance root")
     previous_rows = pilot.read_tsv(old_root / "samples.tsv")
     _require(len(previous_rows) == len({r["sample_id"] for r in previous_rows}), "Duplicate source sample ID")
     previous = {r["sample_id"]: r for r in previous_rows if r["dataset"] == H}
@@ -336,6 +340,7 @@ def prepare_reconstructed(args, pilot):
     output = Path(args.output).expanduser().resolve()
     encoder = Path(args.encoder_project).expanduser().resolve()
     hrows, hmeta, repair_counts, inherited = _h_rows(source, pilot)
+    ancestor_raw_root = pilot.read_json(source / "source_provenance/metadata.json")["raw_root"]
     raw_roots = {H: hmeta["raw_root"]}
     sources = {H: source}
     metadata_by_source = {H: hmeta}
@@ -355,6 +360,7 @@ def prepare_reconstructed(args, pilot):
         cohort.extend(_cohort_row(s, pilot, reconstructed=False, repair_count=s["repaired_domain_count"],
                                   inherited_count=ginherited[s["sample_id"]]) for s in grows)
     protected = [*sources.values(), (Path(pilot.ROOT) / "data/raw").resolve(),
+                 Path(ancestor_raw_root).expanduser().resolve(),
                  *(Path(path).expanduser().resolve() for path in raw_roots.values())]
     _require(not output.exists() and all(not output.is_relative_to(path) and not path.is_relative_to(output) for path in protected),
              "Choose a new output directory separate from reconstruction, repair and raw inputs")
