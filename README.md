@@ -7,8 +7,16 @@
 当前新增 PCA 后的 cosine＋average-linkage 比较，只测试 average-linkage。
 G/H 的 domain 坐标修复入口见 [修复说明](docs/repair_gh.md)，修复副本写入
 `data/processed/repaired_gh_v1/`，原始数据保留在 `data/raw/`。
-G/H 全部 101 个输入已通过现有编码器的 CPU 解析，三路线服务器入口已适配，
-见 [G/H 特征提取说明](docs/gh_features.md)；尚未运行 G/H 模型推理或聚类。
+G/H 全部 101 个输入此前通过了 CPU 解析，但 H 的部分 `aSDomain` 被 Geneious
+保存成 `misc_feature`，没有进入蛋白/domain 输入；旧 `pilot_gh_v1/` 的解析通过
+不代表 domain 注释已完整恢复。现已在新副本中恢复 **2363/2365 条**，
+超过 1021 aa 的 token 从 **156 降为 0**（最长 1008 aa）；`UOC915` 的两条仍待复核，
+整套 H 状态为 `needs_review`。见 [恢复说明](docs/reconstruct_h.md)；
+暂勿用旧 H 队列启动新的三路线比较。
+服务器桥接入口为 `pilot_features.py prepare-reconstructed`，保留全部 90 个 H 样本，
+并将 `UOC915` 的已知注释缺失带入新队列与运行记录。新队列和模型提取均由用户
+在服务器运行，命令见 [G/H 操作说明](docs/gh_features.md)；本地尚未发布新队列。
+使用 Pfam 坐标重新分割的方案暂时搁置；尚未运行 G/H 模型推理或聚类。
 其他数据集仍需进一步准备；本地 BiG-SCAPE 运行、微调和融合尚未开展。
 
 聚类入口与说明：
@@ -91,15 +99,36 @@ G/H 修复副本已完成：G 的蛋白解析由 8/11 提升到 **11/11**，H �
 [逐条修改记录](data/processed/repaired_gh_v1/repairs.tsv)。H 的两条无父 CDS
 Pfam 注释保留原样并标记待核查，不影响当前蛋白解析。
 
-`pilot_features.py prepare-repaired` 已将 G/H 全部 101 个修复副本准备为稳定 ID 队列，
+`pilot_features.py prepare-repaired` 此前将 G/H 全部 101 个坐标修复副本准备为稳定 ID 队列，
 位于 [pilot_gh_v1](data/processed/pilot_gh_v1/summary.md)，metadata 状态为 `complete`，
 再次加载校验通过。11 项 G/H 准备测试与 18 项原有提取/校验测试全部通过。
-后续由同一脚本的 `extract`、`validate` 沿用 B/E 三路线。队列中的 `source_sha256`
+这证明了来源校验和 CPU 解析可运行，但当时没有恢复 H 中隐藏的 Geneious aSDomain。
+旧队列作为历史快照保留，不覆盖其文件或 metadata；H 新比较应使用恢复注释后重新
+准备的版本。队列中的 `source_sha256`
 对应修复后文件，`raw_source_sha256` 单独追溯原始备份；嵌入来源清单后可整目录
-同步到服务器。ESM2 长蛋白仍使用 1021-aa 分窗，MAC 复用同批缓存，DNA 使用
-无长度过滤的 full/FA2/BF16。命令、输入规模和已验证边界见
+同步到服务器。新运行仍使用 ESM2 BOS/1021-aa 窗口策略，MAC 复用同批新缓存，
+DNA 使用无长度过滤的 full/FA2/BF16。命令、输入规模和已验证边界见
 [G/H 服务器操作](docs/gh_features.md)。当前聚类与评分脚本仍仅注册 B/E，待 G/H
 特征返回后再适配 average/PCA 与评分，不新增 Leiden 测试。
+
+H 的恢复入口为 [`reconstruct_h.py`](scripts/reconstruct_h.py)，默认从
+`repaired_gh_v1/` 读取 H 的全部 90 个副本，写到新的
+`data/processed/reconstructed_h_v1/`，保留 G、raw 和既有 processed 快照。
+它只恢复带有确切 `Geneious type: aSDomain` 标记、且父 CDS 与阅读框/翻译证据
+支持的旧注释；保留重复条目并记录旧父 ID 映射，不新增 Pfam 扫描或分割。
+实际结果见 [恢复摘要](data/processed/reconstructed_h_v1/summary.md)：90 个样本全部
+保留，89 个通过 aSDomain 恢复检查，`UOC915` 待复核；无超长 token 不代表其缺失
+注释已解决。本次 22 项测试通过，未生成新模型输入队列或特征。
+逐条证据和后续输入要求见 [H aSDomain 恢复说明](docs/reconstruct_h.md)。
+
+新增 `pilot_features.py prepare-reconstructed` 从 `reconstructed_h_v1/` 读取 H，
+并可从 `repaired_gh_v1/` 合入 G，按稳定 ID 准备完整队列。随后现有 `extract`、
+`validate` 直接使用新输出。建议服务器目录分别为
+`pilot_gh_reconstructed_v1/` 和 `features_gh_reconstructed_v1/`。
+机械准备的 `complete` 与注释的 `needs_review` 分开记录；H 不自动排除
+`UOC915`，也不把未恢复的两条注释改标为完整。此桥接已在 `/tmp` 用真实 G/H
+101 个样本及 H-only 90 个样本通过 CPU 准备、加载与迁移验证；真实输入哈希不变，
+未加载模型。上述正式队列和模型结果尚待用户在服务器创建。
 
 ## 目录布局
 
@@ -120,9 +149,11 @@ data/
     clustering_leiden_v1/      # 原始 cosine kNN Leiden 分析
     vmeasure_comparison_v1/    # 指标复核、选择规则、比较图和 BiG-SCAPE 来源
     clustering_pca_average_v1/ # PCA＋average 的默认输出位置
-    repaired_gh_v1/            # G/H 注释修复副本、逐条证据及 raw 完整性校验
-    pilot_gh_v1/               # 已完成的 G/H 101 个稳定 ID 输入与嵌入来源清单
-    features_gh_v1/            # G/H 服务器特征的建议输出位置，尚未运行
+    repaired_gh_v1/            # G/H 坐标修复副本、逐条证据及 raw 完整性校验
+    reconstructed_h_v1/        # H Geneious aSDomain 恢复副本；使用前检查 metadata 状态
+    pilot_gh_v1/               # 历史队列，H 尚未恢复 Geneious aSDomain；勿用于新 H baseline
+    pilot_gh_reconstructed_v1/ # 新 G/H 队列建议位置，待服务器 prepare-reconstructed 创建
+    features_gh_reconstructed_v1/ # 新 G/H 三路线特征建议位置，尚未运行
     _history/                 # 首次生成、复核前的派生清单备份
 scripts/
   prepare_raw_layout.py
@@ -130,6 +161,7 @@ scripts/
   validate_inventory.py
   pilot_features.py           # B/E 与修复后 G/H 准备、三路线提取、恢复及校验
   prepare_repaired_features.py # G/H 修复来源验证、CPU 输入检查与可迁移队列
+  prepare_reconstructed_features.py # H 恢复来源桥接，保留待复核状态，可合入 G
   pilot_feature_validation.py # ID、向量、来源和 full-DNA 覆盖校验
   clustering_common.py        # 共享特征读取、ID/来源校验、cosine 与评分
   cluster_average.py
@@ -139,6 +171,8 @@ scripts/
   pca_transform.py            # full SVD、数值秩与方差保留率选择
   repair_gh.py                # G/H 修复编排与前后验证
   domain_coordinate_repair.py # 有序列证据的 domain 端点修复
+  reconstruct_h.py            # H 既有 Geneious aSDomain 恢复与逐条审计
+  geneious_asdomain_restore.py # CDS/阅读框/翻译证据与最小文本恢复
 tests/
 ```
 

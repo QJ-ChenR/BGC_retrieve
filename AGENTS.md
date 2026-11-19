@@ -18,6 +18,15 @@ manually curated GCF datasets distributed with BiG-SCAPE 2.0, then test whether
 DNA adds useful information to protein representations. The current project
 stage includes completed B/E BASELINE CLUSTERING and G/H coordinate-repaired
 input preparation, plus G/H encoder-interface verification and server orchestration.
+H's existing Geneious aSDomain annotations have now been recovered in a new
+processed snapshot: 2363 restored, two UOC915 annotations remain needs_review.
+The previous H queue passed CPU parsing while silently omitting these annotations;
+it must not be treated as domain-complete input.
+The current authorized follow-up is the server-side bridge from recovered H (and
+optionally repaired G) to the existing extraction workflow. All 90 H samples,
+including UOC915, remain included with explicit known-incomplete annotation
+status. Local work implements and CPU-tests this bridge; the user will prepare
+the formal queue and run the models on the server.
 B/E server feature extraction is complete and the six exports
 have been returned locally. Preparation of A/C/D/F/I remains pending; G/H model
 extraction and clustering have not been run.
@@ -59,6 +68,24 @@ extraction and clustering have not been run.
   all 101 repaired inputs. `pilot_features.py prepare-repaired` now bridges the
   repair snapshot to the existing extraction/validation workflow; instructions
   are in `docs/gh_features.md`. No G/H model inference or clustering has run.
+- The user then authorized restoring H's existing aSDomain annotations and
+  explicitly deferred Pfam-coordinate splitting. Entry point:
+  `scripts/reconstruct_h.py`; evidence policy: `docs/reconstruct_h.md`.
+  Preserve raw and all previous processed snapshots; do not deduplicate recovered
+  domains or add new Pfam-derived cuts as part of this task. The old H queue must
+  not be used for the planned domain-based benchmark without this recovery and
+  newly validated prepared inputs.
+- The user subsequently authorized server preparation and extraction support via
+  `pilot_features.py prepare-reconstructed`, preserving the remaining UOC915
+  review state rather than deleting that sample. This supersedes the previous
+  lack of a recovery-schema adapter: prepare new server inputs and keep annotation
+  completeness separate from preparation/inference success. Do not run local GPU
+  inference, publish a formal local queue or alter the GBKs again as part of
+  this follow-up; none of those actions was requested.
+- The user subsequently requested pushing these changes to GitHub. Commit and
+  push the H recovery scripts, server adapter, tests and documentation to the
+  existing BGC_retrieve repository. Keep data/ and checkpoints excluded under
+  the existing .gitignore; the processed snapshots require separate transfer.
 - Frozen encoders remain the initial comparison baseline. The user now supports
   comparing multiple clustering methods and considering trained aggregation and
   ESM2 fine-tuning, especially if frozen representations are insufficient.
@@ -91,8 +118,21 @@ extraction and clustering have not been run.
   Verify publication status in its metadata before using the copies.
 - G/H encoder queue: `data/processed/pilot_gh_v1/` is published with metadata
   status complete, all 101 stable-ID GBK copies and embedded repair provenance;
-  see `summary.md` and `input_checks.tsv`. Suggested server feature
-  output is `data/processed/features_gh_v1/`, which has not been generated locally.
+  see `summary.md` and `input_checks.tsv`. This is the historical coordinate-only
+  queue: H's hidden Geneious aSDomain annotations were not used. Its complete
+  status describes that preparation run, not complete domain recovery; preserve
+  it as evidence and do not use its H inputs for a new benchmark. Suggested server feature
+  output for the new workflow is `data/processed/features_gh_reconstructed_v1/`,
+  which has not been generated locally.
+- H aSDomain recovery output: `data/processed/reconstructed_h_v1/`, sourced from
+  `repaired_gh_v1/` and preserving all 90 H entries with original names and labels.
+  G is not changed. Published with status `needs_review`: 2363/2365 annotations
+  restored, 89/90 samples pass recovery checks, UOC915 retains two unresolved
+  annotations. This snapshot is not itself a stable-ID encoder queue.
+- New server queue location: `data/processed/pilot_gh_reconstructed_v1/`, created
+  by `pilot_features.py prepare-reconstructed`. This is a suggested output path,
+  not a locally published artifact; the user runs preparation on the server.
+  New features go to `data/processed/features_gh_reconstructed_v1/`.
 - Migration evidence: `data/processed/raw_relocation/`. All 2941 source files,
   including GBK/TSV/README and supplied HTML/JSON, were hashed before and after
   the directory move. The original file contents and internal layout are preserved.
@@ -830,8 +870,9 @@ ablations. These remain outside the current comparison task.
   `domain_checks.tsv`, `repairs.tsv`, `raw_integrity.tsv`, per-dataset counts and
   provenance hashes. No encoder parser/model modifications or sample exclusions.
 - The repair snapshot itself is not a prepared encoder directory. Use the new
-  `pilot_features.py prepare-repaired` bridge described below. No G/H feature
-  extraction or clustering is claimed by this repair step.
+  `pilot_features.py prepare-repaired` bridge described below for the historical
+  coordinate-only queue. H requires the later aSDomain recovery before a new
+  domain-based benchmark. No G/H extraction or clustering is claimed by this step.
 
 ### G/H encoder compatibility and server workflow
 
@@ -843,15 +884,17 @@ ablations. These remain outside the current comparison task.
   exports also pass the updated validator, and the nine local encoder source
   hashes match their recorded B/E run versions.
 - Existing BGC_annotation ESM2/MAC/DNA interfaces accept all repaired inputs in
-  CPU parser checks: G=11 BGCs/3 GCFs, H=90 BGCs/10 GCFs. No encoder or parser
-  modification is needed. This does not establish checkpoint/GPU inference success.
+  CPU parser checks: G=11 BGCs/3 GCFs, H=90 BGCs/10 GCFs. This establishes parsing
+  compatibility only, not correct recovery of every domain or checkpoint/GPU
+  inference success. The H Geneious omission discovered afterward invalidates
+  the earlier inference that no further input repair was needed.
 - `scripts/prepare_repaired_features.py`, called by
   `pilot_features.py prepare-repaired`, validates the complete repair artifact
   hashes, sample/repair/label consistency and GBK membership. It copies processed
   bytes under stable sample IDs, checks protein/DNA inputs with current parsers,
   and prepares `bgc_repaired_pilot_inputs_v1` metadata, `cohort.tsv`,
   `input_checks.tsv`, a summary and embedded `repair_provenance/` manifests/labels.
-- In the new cohort, `source_sha256` is the actual processed GBK hash used by all
+- In that historical cohort, `source_sha256` is the actual processed GBK hash used by all
   output validators; `raw_source_sha256` is separate original-backup provenance.
   Preserve all 101 entries and raw Unicode labels; no filtering or exclusions.
   The complete prepared directory is portable to the server: validation does not
@@ -862,6 +905,10 @@ ablations. These remain outside the current comparison task.
   tokens across 42 BGCs, maximum 9508 aa. ESM2 covers them with the existing
   disjoint 1021-aa window policy, then residue-weighted pooling restores one
   vector per input token; MAC still receives at most 92 tokens per H BGC.
+  These are pre-recovery counts. All 156 H long tokens were unsplit CDSs with
+  hidden Geneious aSDomain annotations, not domains that remain long after
+  applying their existing annotations. The actual recovery reduces >1021-aa
+  tokens to zero; this does not resolve the two missing UOC915 annotations.
 - H retains 246 N bases; G has no ambiguous bases in the audited inputs. DNA
   remains full/FA2/BF16 with no bp/token cap. Prior B/E full-DNA exports include
   successful inputs up to 185,250 bp; G/H actual BPE lengths/VRAM remain to be
@@ -874,6 +921,133 @@ ablations. These remain outside the current comparison task.
   The clustering/PCA/score scripts still register only B/E; extend their cohort
   handling after G/H features return before analysis. Continue with average/PCA
   under the user's current preference; do not add further Leiden tests.
+
+### H Geneious aSDomain recovery
+
+- The user authorized recovering existing H aSDomain annotations, while explicitly
+  deferring Pfam-coordinate splitting. Continue using the existing rule:
+  recognized aSDomain annotations replace a CDS with its domain tokens; a CDS
+  without recognized domains contributes its whole translation. Do not introduce
+  a new segmentation policy or make recovered domains from PFAM_domain features.
+- The actual run is published at `data/processed/reconstructed_h_v1/` with schema
+  `bgc_h_asdomain_reconstruction_v1`, status `needs_review`, snapshot_complete true
+  and ready_for_full_h_encoding false. It retains all 90 H samples/10 GCFs,
+  modifies 45 GBKs and restores 2363/2365 annotations. There are 91 parent-ID
+  corrections, 187 duplicate groups/190 extra entries retained, and two unresolved
+  annotations in UOC915. Protein/DNA parsing passes 90/90; 89 samples pass the
+  aSDomain recovery check. Long tokens (>1021 aa) decrease from 156 to zero, but
+  UOC915's known missing annotations still prevent claiming a complete H baseline.
+  Total tokens increase from 4836 to 6791 (4718 domains + 2073 whole proteins);
+  the maximum token is now 1008 aa. The other 45 GBKs are byte-identical to source.
+- Sixteen core and six workflow tests pass. The full run validates rereading all
+  GBKs, idempotence, non-target feature preservation and the expected token changes.
+  All 2941 raw files and the complete source snapshot retain their before/after
+  hashes. Independent verification also checks all 106 artifacts and current
+  script hashes. No model inference or new prepared encoder queue was created.
+- H contains 2365 `misc_feature` annotations in 45/90 files with the exact note
+  `Geneious type: aSDomain`. They lack translation and protein-coordinate qualifiers
+  and are ignored by the current parser. Missing aSDomain family names are not
+  permission to invent names, HMM scores or Pfam identifiers.
+- Read from `data/processed/repaired_gh_v1/`, preserving prior sequence-proven
+  endpoint repairs. Write a new H-only snapshot under
+  `data/processed/reconstructed_h_v1/`; retain all 90 H entries, family paths,
+  filenames and labels. Do not modify G, raw, inventory or earlier processed data.
+- Restore only with an unambiguous same-strand containing parent CDS and exact
+  agreement among nucleotide interval, parent CDS reading frame/codon_start,
+  translated domain DNA and the corresponding CDS protein slice. Add zero-based,
+  half-open protein coordinates and the proven translation. Evidence establishes
+  interval consistency, not independent biological validation of old HMM boundaries.
+- The completed recovery restores 2272 annotations directly plus 91 annotations whose
+  old locus_tag must be mapped to their sequence/coordinate-proven parent. Record
+  the old ID, new ID and evidence explicitly; never silently match by old tag alone.
+  Two UOC915 annotations retain the same 1154-bp interval and an out-of-frame
+  start. The original COMMENT records a GG insertion at 17584–17585 within their
+  interval; the current CDS DNA and translation agree, but the old domain bounds
+  do not fit that reading frame. No exact parent-protein match with transferable
+  trusted boundaries was found across the nine raw datasets. Retain these two
+  unresolved annotations; do not round coordinates or apply a blanket extension.
+- Preserve duplicate multiplicity: the audit found 187 repeated parent/location
+  groups with 190 extra annotations in 40 H BGCs. Report groups but do not merge,
+  drop or downweight entries in this recovery. Any future deduplication would be
+  a separately evaluated input-policy change.
+- Preserve DNA, CDS translations, record IDs, GCF labels, existing native aSDomain
+  and PFAM annotations and all unrelated features. Use minimal text edits, retain
+  old qualifiers in the audit and record source/output hashes. Never apply the
+  earlier endpoint-repair rule without its original translation evidence.
+- Unresolved annotations stay unchanged as review items. If any remain unresolved,
+  a complete, inspectable copy may be published with `needs_review`, but this is
+  not an assertion of benchmark readiness. In schema
+  `bgc_h_asdomain_reconstruction_v1`, `snapshot_complete: true` refers to validated
+  output files only; `ready_for_full_h_encoding: false` explicitly blocks a claim
+  of complete H input readiness. Do not silently exclude their BGCs.
+- The old `pilot_gh_v1/` stays unchanged. Its CPU parser success did not test whether
+  Geneious aSDomain annotations had been recovered. Recovered H needs a new
+  stable-ID cohort with its own provenance; do not overwrite GBKs inside the old
+  cohort or pass the recovery snapshot to a command expecting the coordinate-only
+  repair schema. Existing `prepare-repaired` retains the coordinate-only schema;
+  the newly authorized `prepare-reconstructed` handles the recovery snapshot.
+  The recovery run itself created no new encoder queue. No new H model inference,
+  clustering or V-measure is claimed.
+
+### Server bridge for recovered H and repaired G
+
+- `pilot_features.py prepare-reconstructed` reads H from
+  `--reconstructed-root data/processed/reconstructed_h_v1`; for `--datasets G H`,
+  it also reads G from `--repaired-root data/processed/repaired_gh_v1`.
+  `--encoder-project` selects the CPU parser checkout, and `--output` must be a
+  new directory, suggested `data/processed/pilot_gh_reconstructed_v1`.
+  H-only preparation does not require G inputs. Server commands and checkpoints
+  are documented in `docs/gh_features.md`.
+- Prepared schema is `bgc_reconstructed_pilot_inputs_v1`; extraction run schema is
+  `bgc_reconstructed_feature_run_v1`. The full H snapshot can be copied to the
+  server without rerunning recovery; server-side recovery instead requires its
+  raw/inventory/repaired inputs. H-only preparation may omit `--repaired-root`.
+- Preserve the complete selected cohorts: G=11/3 GCFs and H=90/10 GCFs. Keep
+  UOC915, all labels/singletons and duplicate aSDomain entries. The adapter copies
+  GBK bytes, verifies provenance and runs CPU input checks; it performs no further
+  domain repair, Pfam segmentation, length filtering or sample exclusions.
+- A prepared metadata status of `complete` means mechanical preparation succeeded,
+  not that H domain annotations are complete. Carry `needs_review` and
+  the evidence for the two unresolved UOC915 annotations through
+  prepared metadata, cohort members and extraction `run.json`. Do not mutate
+  the reconstruction snapshot's status or ready_for_full_h_encoding flag.
+  Prepared/config/run top-level fields are annotation_status, annotation_complete,
+  unresolved_asdomain_count, unresolved_sample_ids and review_policy. Current H
+  uses needs_review, false, 2, UOC915's stable ID, and retain, respectively.
+  The annotation fields cover this Geneious aSDomain reconstruction only;
+  earlier PFAM etc. review items remain separate in inherited_review_count.
+- Preserve new actual-source GBK hashes, raw hashes and embedded audit provenance.
+  H records are embedded in reconstruction_provenance/, including source_provenance/
+  for the earlier repair chain; optional G records use repair_provenance/.
+  Do not replace files in the old `pilot_gh_v1/` or reuse its H ESM cache. Existing
+  `extract` / `validate` accept the new prepared format and require every selected
+  sample. Use a new `features_gh_reconstructed_v1/` output directory.
+- Keep B/E settings: ESM2 BOS/1021-aa windows, MAC member 0 consuming the same
+  run's ESM cache, DNA full/FA2/BF16 without a length cap or silent windowed fallback.
+  Current restored H has 48–123 tokens per BGC, total 6791, maximum 1008 aa; G has
+  372 total tokens, maximum 945 aa. Neither currently needs ESM token windows.
+- Local work is code and temporary CPU tests only; no formal new queue has been
+  published locally and no G/H model inference has run. The user runs preparation,
+  extraction and validation on the server. Keep all known annotation limitations
+  in future performance reports, and adapt average/PCA/scoring only after features
+  return. No additional Leiden experiments are part of this task. GitHub
+  publication was subsequently authorized explicitly, as recorded above.
+  The six existing B/E real feature exports have passed the updated validation.
+- Actual CPU preparation and loading were verified in /tmp using all 101 real
+  G/H samples and separately all 90 H-only samples. Tokens are G=372/H=6791,
+  no token exceeds 1021 aa, and both unresolved annotations remain recorded.
+  No torch import or model inference occurred; real input hashes are unchanged.
+  The formal data/processed/pilot_gh_reconstructed_v1 directory does not exist.
+- A portability check changes a temporary copy of G's recorded raw_root to a simulated server path,
+  relocates the prepared queue and renames its original input copies. Intercepted
+  read_json/read_tsv/sha256 operations then permit only paths inside the relocated
+  queue, and loading still succeeds. Source identity relies on content hashes,
+  while historical source paths are retained only as provenance.
+- The final combined run passes 47 tests: 13 new preparation, 5 new run
+  orchestration, 11 existing G/H preparation and 18 existing extraction/native
+  validator tests. Model subprocesses use stubs in orchestration tests; real
+  input checks use CPU parsers only. These are interface/provenance/workflow
+  checks, not GPU model inference tests. Log: /tmp/h-bridge-final-tests.log.
 
 The 2026-11-02 audit was originally read-only inline Python. Its major counts and
 single-file parser outcomes have now been revalidated by the persistent inventory

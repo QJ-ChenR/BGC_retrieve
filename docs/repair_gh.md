@@ -5,6 +5,11 @@
 修复对象是 G/H 中有相同坐标错误证据的 `aSDomain` 和 `PFAM_domain` 注释，
 原始 DNA、翻译序列和 GCF 标签不重写。
 
+本步骤解决原生 domain 的坐标错误，未恢复被 Geneious 保存为 `misc_feature`
+的 H aSDomain。后续发现这类注释被蛋白解析器忽略；即使全部文件可以解析，也
+不能据此认定 domain 输入完整。H 的后续恢复从本快照读取，并写入新目录，见
+[H aSDomain 恢复](reconstruct_h.md)。本坐标修复快照和 raw 继续作为追溯来源保留。
+
 ## 运行
 
 在项目根目录、已安装 `requirements-inventory.txt` 的环境中运行：
@@ -102,11 +107,16 @@ DNA 解析全部通过。共修复 668 条 aSDomain 与 216 条 PFAM_domain 的�
 暂不修改并保留复核记录。当前蛋白解析器不使用 `PFAM_domain`，因此它们不阻止
 蛋白输入解析；解析通过不代表全部生物学注释问题已经解决。
 
-后续编码通过 `scripts/pilot_features.py prepare-repaired` 读取本目录，生成
+此前通过 `scripts/pilot_features.py prepare-repaired` 读取本目录，生成
 `data/processed/pilot_gh_v1/`：输入内容保持为修复副本，文件名改为稳定 sample_id，
 并嵌入修复来源清单。再使用相同脚本的 `extract`、`validate` 调用 ESM2、BGC-MAC
 和 DNA。不要直接把本目录作为 `--prepared`，因为修复快照与编码队列的格式不同。
-完整命令及接口检查见 [G/H 特征提取](gh_features.md)。
+历史命令及接口检查见 [G/H 特征提取](gh_features.md)。
 `pilot_gh_v1/` 已包含全部 101 个样本并通过加载校验，见
 [编码输入准备摘要](../data/processed/pilot_gh_v1/summary.md)。
+该检查只证明当时的解析与来源记录通过，未识别 H 的 Geneious aSDomain 丢失问题。
+旧 H 队列暂不用于新的 ESM2/MAC/DNA 比较；需先完成
+[aSDomain 恢复](reconstruct_h.md)、核对待复核条目，再生成新的编码队列。
+新恢复副本已恢复 2363 条，仍有 `UOC915` 的两条保留为 `needs_review`；
+这不改变本坐标修复快照的历史内容或检查结果。
 目前只执行修复、CPU 输入验证与编排适配，没有运行 G/H 模型推理、聚类或 BiG-SCAPE。
