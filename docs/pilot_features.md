@@ -5,7 +5,9 @@ ESM2、BGC-MAC 和完整 DNA 的冻结特征。每个 BGC 对应一行向量；�
 分别保留，不合并 GCF 标签。本脚本不执行聚类、BiG-SCAPE 或模型训练。
 
 入口为 `scripts/pilot_features.py`，依次使用 `prepare`、`extract`、`validate`。
-下面命令从服务器的 `BIG-SCAPE` 根目录运行；请将 `/server/...` 换成实际路径。
+下面命令从服务器的 `BGC_retrieve` 根目录运行；请将 `/server/...` 换成实际路径。
+G/H 使用修复后的输入，入口为新增的 `prepare-repaired`，见
+[G/H 特征提取说明](gh_features.md)。B/E 的原始准备命令和已完成产物保持兼容。
 
 ## 服务器需要的文件与环境
 

@@ -1,0 +1,7 @@
+# Validated together on Python 3.12; model inference / PyTorch is not needed.
+numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.9.1
+igraph==1.0.0
+leidenalg==0.12.0
+matplotlib==3.11.2

@@ -1,13 +1,105 @@
-# BGC 人工 GCF 数据集准备
+# BGC 特征与人工 GCF 聚类比较
 
-已建立九个数据集的可追溯清单。当前选择 B、E 跑通 ESM2、BGC-MAC 和 DNA
-特征提取；服务器调用脚本与固定输入队列已准备，真实模型提取由用户在服务器运行。
-尚未执行聚类、BiG-SCAPE 比较或模型训练，其他数据集仍需进一步准备。
+已建立九个数据集的可追溯清单。B、E 的 ESM2、BGC-MAC 和 DNA 特征已经在
+服务器提取并传回本地，位于 `data/processed/features_be_v1/`。
+当前实现两个原始空间基线：cosine＋average-linkage、cosine＋kNN＋Leiden。
+已汇总其 V-measure，并导入作者公开的 BiG-SCAPE 分数作为外部参考。
+当前新增 PCA 后的 cosine＋average-linkage 比较，只测试 average-linkage。
+G/H 的 domain 坐标修复入口见 [修复说明](docs/repair_gh.md)，修复副本写入
+`data/processed/repaired_gh_v1/`，原始数据保留在 `data/raw/`。
+G/H 全部 101 个输入已通过现有编码器的 CPU 解析，三路线服务器入口已适配，
+见 [G/H 特征提取说明](docs/gh_features.md)；尚未运行 G/H 模型推理或聚类。
+其他数据集仍需进一步准备；本地 BiG-SCAPE 运行、微调和融合尚未开展。
+
+聚类入口与说明：
+
+- [cluster_average.py](scripts/cluster_average.py)：完整层次树、距离阈值扫描及树图。
+- [cluster_leiden.py](scripts/cluster_leiden.py)：kNN 图、Leiden 社区及随机种子稳定性。
+- [聚类使用说明](docs/clustering_baselines.md)：数据格式、参数、指标和输出。
+- [PCA＋average-linkage](docs/pca_average.md)：固定维数/方差保留率扫描，以及原始、仅中心化、全部有效主成分对照。
+
+在本项目根目录、已安装 `requirements-clustering.txt` 的环境中运行：
+
+```bash
+python scripts/cluster_average.py
+python scripts/cluster_leiden.py
+```
+
+默认分析 B/E × ESM2/MAC/DNA 六组特征，输出到
+`data/processed/clustering_average_v1/`、`data/processed/clustering_leiden_v1/`。
+本地已完成这两个默认运行，全部样本保留，66 项测试通过。
+已有输出时用 `--output` 指定新的目录。两脚本均按显式行号与 sample_id 对齐，
+要求完整样本覆盖；家族标签只参与评分，不用于选参数或构建距离/图。
+
+V-measure 对照见 **[汇总报告](data/processed/vmeasure_comparison_v1/summary.md)**、
+[比较图](data/processed/vmeasure_comparison_v1/comparison.png)；入口为
+[summarize_vmeasure.py](scripts/summarize_vmeasure.py)。汇总从成员表重算并核对了
+1500 个划分的 homogeneity、completeness、V-measure 和 ARI，误差不超过 `1e-12`；
+B 保留 39 个样本 / 23 个家族，E 保留 281 个样本 / 90 个家族。
+
+汇总采用真实家族数辅助的诊断口径：Average 取预测簇数最近的切点，并列取较小阈值；
+Leiden 对每个 k 分别最小化五个种子的平均 `|预测簇数−真实家族数|`，并列取较小 resolution。
+简表固定显示原网格中间值 k=10，完整保留 k=5/10/15，均未按最高 V-measure 挑选。
+精确匹配家族数的 Average 中，BGC-MAC 在 B/E 分别为 **0.8700 / 0.8133**；
+E 的 Leiden 现有网格最多只有 50 簇，尚未覆盖 90 个家族的目标分辨率。
+另有 4 项汇总选择规则测试通过。
+
+BiG-SCAPE 参考来自 [作者 Zenodo 归档](https://zenodo.org/records/16838820)，
+含 1.x 的 2 种模式、2.x 的 7 种模式，共 18 条 B/E 结果。本地没有重跑 BiG-SCAPE；
+公开日志的名义样本数相符，但有效 ID 未逐条核验，且部分导出混淆矩阵计数不完整，
+因此暂不能将并列分数解释为严格同样本比较。来源和核验记录保存在 `sources/`。
+
+复算汇总时指定新目录（脚本拒绝覆盖已有报告）：
+
+```bash
+python scripts/summarize_vmeasure.py \
+  --published data/processed/vmeasure_comparison_v1/sources/bigscape_published.tsv \
+  --output data/processed/vmeasure_comparison_v2
+```
+
+PCA 实验使用相同特征与队列，在已安装聚类依赖的环境中运行：
+
+```bash
+python scripts/cluster_pca_average.py
+```
+
+默认扫描 `2/4/8/16/32/64/128/256` 维和 `90%/95%/99%` 方差保留率，
+超过有效秩的请求会明确跳过。输出到新的 `data/processed/clustering_pca_average_v1/`。
+PCA 按数据集/路线单独拟合，不做 whitening；同时报告仅中心化对照，
+用来区分中心化与丢弃主成分的影响。所有条件沿用最近真实家族数的切点规则，
+不按最高 V-measure 选择维数。命令、产物和解释限制见 [PCA 实验说明](docs/pca_average.md)。
+默认运行已完成 72 个条件、12,488 个距离切点；9 个超过 B 有效秩的请求明确跳过。
+全部划分保留完整队列，六组原始空间对照与已有 average 结果核验一致，27 项相关测试通过。
+结果见 [PCA 汇总报告](data/processed/clustering_pca_average_v1/summary.md) 和
+[维数曲线](data/processed/clustering_pca_average_v1/v_measure_by_dimension.png)。
+本地重跑请用 `--output` 指定新目录。
 
 服务器操作见 **[B/E 特征提取说明](docs/pilot_features.md)**，入口为
 `python scripts/pilot_features.py prepare / extract / validate` 三个子命令。
 本地已准备的 [pilot_be_v1/cohort.tsv](data/processed/pilot_be_v1/cohort.tsv)
 包含 B 的 39 个和 E 的 281 个条目；输入 GBK 使用稳定 sample_id 命名，内容与原始文件逐字节一致。
+
+G/H 数据修复使用 [`repair_gh.py`](scripts/repair_gh.py)。它只在序列和父 CDS
+共同支持时修正 domain 端点，并保留逐条证据及修改前后哈希。输出保留原始文件名和
+家族目录。运行和输出细节见
+[G/H 坐标修复](docs/repair_gh.md)。
+
+G/H 修复副本已完成：G 的蛋白解析由 8/11 提升到 **11/11**，H 由 75/90
+提升到 **90/90**，DNA 解析全部通过。20 个文件共修正 884 条 domain 坐标，
+原始 2941 个文件的哈希前后一致。详见
+[修复结果](data/processed/repaired_gh_v1/summary.md) 和
+[逐条修改记录](data/processed/repaired_gh_v1/repairs.tsv)。H 的两条无父 CDS
+Pfam 注释保留原样并标记待核查，不影响当前蛋白解析。
+
+`pilot_features.py prepare-repaired` 已将 G/H 全部 101 个修复副本准备为稳定 ID 队列，
+位于 [pilot_gh_v1](data/processed/pilot_gh_v1/summary.md)，metadata 状态为 `complete`，
+再次加载校验通过。11 项 G/H 准备测试与 18 项原有提取/校验测试全部通过。
+后续由同一脚本的 `extract`、`validate` 沿用 B/E 三路线。队列中的 `source_sha256`
+对应修复后文件，`raw_source_sha256` 单独追溯原始备份；嵌入来源清单后可整目录
+同步到服务器。ESM2 长蛋白仍使用 1021-aa 分窗，MAC 复用同批缓存，DNA 使用
+无长度过滤的 full/FA2/BF16。命令、输入规模和已验证边界见
+[G/H 服务器操作](docs/gh_features.md)。当前聚类与评分脚本仍仅注册 B/E，待 G/H
+特征返回后再适配 average/PCA 与评分，不新增 Leiden 测试。
 
 ## 目录布局
 
@@ -23,13 +115,30 @@ data/
     raw_relocation/            # 迁移前后路径、逐文件校验和及验证记录
     inventory_v1/              # 当前样本清单
     pilot_be_v1/               # B/E 固定输入、身份映射与原始标签
+    features_be_v1/            # 服务器返回的 B/E × ESM2/MAC/DNA 特征
+    clustering_average_v1/     # 原始 cosine average-linkage 分析
+    clustering_leiden_v1/      # 原始 cosine kNN Leiden 分析
+    vmeasure_comparison_v1/    # 指标复核、选择规则、比较图和 BiG-SCAPE 来源
+    clustering_pca_average_v1/ # PCA＋average 的默认输出位置
+    repaired_gh_v1/            # G/H 注释修复副本、逐条证据及 raw 完整性校验
+    pilot_gh_v1/               # 已完成的 G/H 101 个稳定 ID 输入与嵌入来源清单
+    features_gh_v1/            # G/H 服务器特征的建议输出位置，尚未运行
     _history/                 # 首次生成、复核前的派生清单备份
 scripts/
   prepare_raw_layout.py
   build_inventory.py
   validate_inventory.py
-  pilot_features.py           # B/E 准备、三路线提取、阶段恢复与校验
+  pilot_features.py           # B/E 与修复后 G/H 准备、三路线提取、恢复及校验
+  prepare_repaired_features.py # G/H 修复来源验证、CPU 输入检查与可迁移队列
   pilot_feature_validation.py # ID、向量、来源和 full-DNA 覆盖校验
+  clustering_common.py        # 共享特征读取、ID/来源校验、cosine 与评分
+  cluster_average.py
+  cluster_leiden.py
+  summarize_vmeasure.py       # 从已有成员表复核指标并汇总，不重跑聚类
+  cluster_pca_average.py      # PCA 维数扫描及 average-linkage 对照
+  pca_transform.py            # full SVD、数值秩与方差保留率选择
+  repair_gh.py                # G/H 修复编排与前后验证
+  domain_coordinate_repair.py # 有序列证据的 domain 端点修复
 tests/
 ```
 
@@ -142,4 +251,4 @@ python -B -m unittest discover -s tests -v
 
 其他七个数据集仍应根据 `issues.tsv`、重复组和兼容性错误逐类确定处理政策。
 B/E 当前按原始队列分别提取，保留 singleton 和跨数据集重复；不把两者当作互不重叠的训练/测试划分。
-多聚类、ESM2 微调和 DNA/蛋白融合仍属于未来研究路线，详见 `AGENTS.md`。
+这两个聚类基线已进入实现阶段；其他聚类方案、ESM2 微调和 DNA/蛋白融合仍是未来路线，详见 `AGENTS.md`。

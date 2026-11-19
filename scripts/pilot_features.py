@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare and extract the fixed B/E pilot using the existing BGC_annotation CLIs."""
+"""Prepare audited B/E or repaired G/H inputs and call the BGC_annotation CLIs."""
 
 from __future__ import annotations
 
@@ -18,10 +18,12 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-DATASETS = {"B": ("Dataset_B_Divergent", 39), "E": ("Dataset_E_MIBiG_BS1", 281)}
+DATASETS = {"B": ("Dataset_B_Divergent", 39), "E": ("Dataset_E_MIBiG_BS1", 281),
+            "G": ("Dataset_G_Planomonospora", 11), "H": ("Dataset_H_Reclassification", 90)}
 ROUTES = ("esm2", "mac", "dna_full")
 INVENTORY_SCHEMA = "curated_bgc_inventory_v1"
 PREPARED_SCHEMA = "bgc_be_pilot_inputs_v1"
+REPAIRED_SCHEMA = "bgc_repaired_pilot_inputs_v1"
 COHORT_FIELDS = ("dataset", "sample_id", "original_bgc_id", "archive_relpath",
                  "source_sha256", "gcf_raw", "tsv_row_ids_json")
 ENCODER_FILES = (
@@ -84,7 +86,7 @@ def validate_rows(rows, dataset_names):
         raise ValueError("Repeated dataset selection")
     expected_counts = dict(DATASETS.values())
     if not dataset_names or set(dataset_names) - set(expected_counts):
-        raise ValueError("Only the audited B/E pilot datasets are supported")
+        raise ValueError("Only the audited B/E and repaired G/H datasets are supported")
     if {r["dataset"] for r in rows} != set(dataset_names):
         raise ValueError("Unexpected dataset membership in cohort")
     ids = [r["sample_id"] for r in rows]
@@ -108,6 +110,8 @@ def validate_rows(rows, dataset_names):
 
 
 def prepare(args):
+    if not args.datasets or set(args.datasets) - {"B", "E"}:
+        raise ValueError("Raw preparation supports B/E only; use prepare-repaired for G/H")
     raw, inventory, output = (p.expanduser().resolve() for p in
                               (args.raw_root, args.inventory, args.output))
     if output.exists() or output.is_relative_to(raw):
@@ -189,16 +193,33 @@ def prepare(args):
     print(f"Prepared {len(rows)} BGCs: {output}")
 
 
+def prepare_repaired(args):
+    from prepare_repaired_features import prepare_repaired as prepare_impl
+    return prepare_impl(args, sys.modules[__name__])
+
+
+def feature_run_format(prep_metadata):
+    return ("bgc_repaired_feature_run_v1" if prep_metadata["format"] == REPAIRED_SCHEMA
+            else "bgc_be_feature_run_v1")
+
+
 def load_prepared(path):
     path = Path(path).expanduser().resolve()
     metadata = read_json(path / "metadata.json")
-    if metadata.get("format") != PREPARED_SCHEMA or metadata.get("status") != "complete":
+    if metadata.get("format") not in {PREPARED_SCHEMA, REPAIRED_SCHEMA} or metadata.get("status") != "complete":
         raise ValueError("Prepared cohort is incomplete or has the wrong format")
+    allowed_keys = {"G", "H"} if metadata["format"] == REPAIRED_SCHEMA else {"B", "E"}
+    allowed_names = {name for key, (name, _) in DATASETS.items() if key in allowed_keys}
+    if set(metadata["datasets"]) - allowed_names:
+        raise ValueError("Prepared format does not match the dataset source policy")
     for name, digest in metadata["artifact_sha256"].items():
         if sha256(safe_child(path, name)) != digest:
             raise ValueError(f"Prepared manifest changed: {name}")
     rows = read_tsv(path / "cohort.tsv")
     validate_rows(rows, metadata["datasets"])
+    if metadata["format"] == REPAIRED_SCHEMA:
+        from prepare_repaired_features import validate_repaired_cohort
+        validate_repaired_cohort(path, metadata, rows, sys.modules[__name__])
     for dataset in metadata["datasets"]:
         subset = [r for r in rows if r["dataset"] == dataset]
         inputs = path / dataset / "inputs"
@@ -295,8 +316,11 @@ def check_step(output, dataset, route, rows, saved=None):
 def extract(args):
     prepared, prep_metadata, rows = load_prepared(args.prepared)
     output = args.output.expanduser().resolve()
-    if output.is_relative_to(prepared) or output.is_relative_to(Path(prep_metadata["raw_root"])):
-        raise ValueError("Feature output must be separate from prepared inputs and raw data")
+    protected = [prepared, Path(prep_metadata["raw_root"]).resolve()]
+    if prep_metadata.get("source_root"):
+        protected.append(Path(prep_metadata["source_root"]).resolve())
+    if any(output.is_relative_to(path) for path in protected):
+        raise ValueError("Feature output must be separate from prepared inputs, repaired sources and raw data")
     config = extraction_config(args, prepared, prep_metadata)
     state_path = output / "run.json"
     if output.exists():
@@ -307,7 +331,7 @@ def extract(args):
             raise ValueError("Run configuration/code/checkpoint changed; choose a new output directory")
     else:
         output.mkdir(parents=True)
-        state = {"format": "bgc_be_feature_run_v1", "status": "running", "created_at_utc": now(),
+        state = {"format": feature_run_format(prep_metadata), "status": "running", "created_at_utc": now(),
                  "config": config, "datasets": prep_metadata["datasets"], "steps": {}}
         write_json(state_path, state)
     # A lock prevents simultaneous resume commands from sharing GPU output paths.
@@ -383,7 +407,7 @@ def validate(args):
     prepared, prep_metadata, rows = load_prepared(args.prepared)
     output = args.output.expanduser().resolve()
     state = read_json(output / "run.json")
-    if (state.get("format") != "bgc_be_feature_run_v1" or state.get("status") != "complete"
+    if (state.get("format") != feature_run_format(prep_metadata) or state.get("status") != "complete"
             or state["datasets"] != prep_metadata["datasets"]
             or state["config"]["cohort_sha256"] != sha256(prepared / "cohort.tsv")):
         raise ValueError("Run is incomplete or belongs to a different cohort")
@@ -404,8 +428,14 @@ def build_parser():
     prep.add_argument("--raw-root", type=Path, default=ROOT / "data/raw/curated_datasets")
     prep.add_argument("--inventory", type=Path, default=ROOT / "data/processed/inventory_v1")
     prep.add_argument("--output", type=Path, default=ROOT / "data/processed/pilot_be_v1")
-    prep.add_argument("--datasets", nargs="+", choices=tuple(DATASETS), default=["B", "E"])
+    prep.add_argument("--datasets", nargs="+", choices=("B", "E"), default=["B", "E"])
     prep.set_defaults(handler=prepare)
+    repaired = commands.add_parser("prepare-repaired", help="Validate and stage repaired G/H; CPU parsing only")
+    repaired.add_argument("--repaired-root", type=Path, default=ROOT / "data/processed/repaired_gh_v1")
+    repaired.add_argument("--output", type=Path, default=ROOT / "data/processed/pilot_gh_v1")
+    repaired.add_argument("--datasets", nargs="+", choices=("G", "H"), default=["G", "H"])
+    repaired.add_argument("--encoder-project", type=Path, default=ROOT.parent / "BGC_annotation")
+    repaired.set_defaults(handler=prepare_repaired)
     run = commands.add_parser("extract", help="Run frozen ESM2, MAC and full-DNA extraction")
     run.add_argument("--prepared", type=Path, required=True)
     run.add_argument("--encoder-project", type=Path, required=True)

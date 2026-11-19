@@ -1,6 +1,6 @@
-# Handoff: BGC dataset preparation and future embedding evaluation roadmap
+# Handoff: BGC datasets, frozen features and baseline clustering
 
-Last updated: 2026-11-10 (Europe/Paris).
+Last updated: 2026-11-19 (Europe/Paris).
 
 This file preserves the discussion and investigation for a new Codex conversation.
 The user communicates in Chinese. Explain decisions and results in Chinese; use
@@ -16,8 +16,11 @@ coarse biosynthetic class alone.
 The research objective is to evaluate protein and DNA embeddings using the nine
 manually curated GCF datasets distributed with BiG-SCAPE 2.0, then test whether
 DNA adds useful information to protein representations. The current project
-stage is B/E PILOT FEATURE EXTRACTION PREPARATION, with dataset preparation still
-pending for the other seven sets. The user will run real model extraction on the server.
+stage includes completed B/E BASELINE CLUSTERING and G/H coordinate-repaired
+input preparation, plus G/H encoder-interface verification and server orchestration.
+B/E server feature extraction is complete and the six exports
+have been returned locally. Preparation of A/C/D/F/I remains pending; G/H model
+extraction and clustering have not been run.
 
 - On 2026-11-09 the user authorized the first dataset-preparation step: create
   `data/raw/` and `data/processed/`, move original data into raw, and establish a
@@ -30,15 +33,43 @@ pending for the other seven sets. The user will run real model extraction on the
   frozen ESM2, BGC-MAC and DNA embeddings. This supersedes the earlier restriction
   to inventory work for these two datasets. Implemented entrypoint:
   `scripts/pilot_features.py` (`prepare`, `extract`, `validate`), documented in
-  `docs/pilot_features.md`. No server/GPU run is authorized or claimed here.
+  `docs/pilot_features.md`. This step did not launch a server/GPU run; the user
+  subsequently completed extraction and returned the outputs, as recorded below.
+- On 2026-11-11 the user reported completing server extraction, returned the B/E
+  outputs, and authorized two clustering scripts: original cosine + average
+  linkage and original cosine + kNN + Leiden. Live inspection found the files
+  in `data/processed/features_be_v1/` (not `data/feature/`). All six native exports
+  passed provenance/coverage validation, including the extraction run's artifact
+  hashes and shared ESM/MAC token-cache provenance.
+- The user subsequently requested B/E V-measure comparison across these routes
+  and BiG-SCAPE. `scripts/summarize_vmeasure.py` now rechecks existing memberships
+  and summarizes them alongside author-published BiG-SCAPE outputs; no local
+  BiG-SCAPE run or new clustering sweep is claimed.
+- On 2026-11-12 the user authorized a PCA preprocessing experiment with
+  average-linkage on the existing B/E features, explicitly excluding further
+  Leiden tests for this step. This supersedes the design-only PCA scope below
+  for these six feature exports. Entry point: `scripts/cluster_pca_average.py`;
+  instructions: `docs/pca_average.md`.
+- On 2026-11-19 the user authorized repairing G/H coordinate annotations in
+  processed copies, explicitly preserving raw files as backups. This is an
+  input-preparation task, not authorization to launch G/H encoding or clustering.
+  Entry point: `scripts/repair_gh.py`; evidence policy: `docs/repair_gh.md`.
+- The user subsequently requested checking encoder compatibility to measure
+  ESM2, BGC-MAC and DNA on G/H using the same workflow as B/E. CPU parsing passes
+  all 101 repaired inputs. `pilot_features.py prepare-repaired` now bridges the
+  repair snapshot to the existing extraction/validation workflow; instructions
+  are in `docs/gh_features.md`. No G/H model inference or clustering has run.
 - Frozen encoders remain the initial comparison baseline. The user now supports
   comparing multiple clustering methods and considering trained aggregation and
   ESM2 fine-tuning, especially if frozen representations are insufficient.
   Training is a planned future research branch, not restricted to a final fallback.
-- The research directions below are future design options, not current execution
-  tasks. Specific model choices, losses, splits, and hyperparameters are not final.
-- B/E extraction orchestration is implemented; actual benchmark model extraction,
-  clustering, retrieval evaluation and parser repairs have not been run.
+- Beyond the two selected baselines and the authorized PCA + average experiment,
+  the research directions below remain future
+  design options. Specific training choices, losses and splits are not final.
+- B/E extraction orchestration and baseline clustering scripts are implemented.
+  The user ran actual feature extraction on the server. G/H coordinate repairs
+  are published in processed copies; retrieval evaluation and model training
+  have not been run, and the encoder parsers themselves were not modified.
 - The implementation choices below are recommendations, not a finalized protocol
   approved by the user. Follow the new conversation's instructions to proceed.
   This file does not itself authorize launching server jobs or modifying models.
@@ -47,13 +78,21 @@ pending for the other seven sets. The user will run real model extraction on the
 
 ## Workspace map
 
-- Benchmark workspace: `/home/qiju/projects/BIG-SCAPE/`.
+- Benchmark workspace: `/home/qiju/projects/BGC_retrieve/`, renamed from
+  `/home/qiju/projects/BIG-SCAPE/` before the 2026-11-11 clustering work.
   It contains data, inventory scripts/tests and documentation, not a checkout or
   installation of the BiG-SCAPE clustering software.
 - Raw benchmark data: `data/raw/curated_datasets/` (moved from
   `data/curated_datasets/` on 2026-11-09; do not use the obsolete path).
 - Dataset source references: `data/raw/curated_datasets/README.md`.
 - All derived data: `data/processed/`; current inventory: `data/processed/inventory_v1/`.
+- G/H repair output: `data/processed/repaired_gh_v1/`, preserving original dataset,
+  family and filename layout, with separate raw/processed hashes and repair evidence.
+  Verify publication status in its metadata before using the copies.
+- G/H encoder queue: `data/processed/pilot_gh_v1/` is published with metadata
+  status complete, all 101 stable-ID GBK copies and embedded repair provenance;
+  see `summary.md` and `input_checks.tsv`. Suggested server feature
+  output is `data/processed/features_gh_v1/`, which has not been generated locally.
 - Migration evidence: `data/processed/raw_relocation/`. All 2941 source files,
   including GBK/TSV/README and supplied HTML/JSON, were hashed before and after
   the directory move. The original file contents and internal layout are preserved.
@@ -183,8 +222,10 @@ Primary sources already consulted:
 3. Published dataset/output archive, versioned record:
    <https://zenodo.org/records/16838820>.
    It includes `curated_datasets.tar.gz`, `curated_outputs.tar.gz`, and
-   `curated_benchmarked.tar.gz`. The latter two were not present locally in the
-   audited directory. Verify versions and effective IDs before reusing outputs.
+   `curated_benchmarked.tar.gz`. The benchmark archive is now downloaded under
+   `data/processed/vmeasure_comparison_v1/sources/`; the larger
+   `curated_outputs.tar.gz` was not downloaded. Effective IDs remain unverified;
+   published scores are external references, not a local reproduction.
 4. Official benchmark implementation inspected during the investigation:
    <https://github.com/medema-group/BiG-SCAPE/blob/master/big_scape/benchmarking/benchmark_data_loader.py>
    <https://github.com/medema-group/BiG-SCAPE/blob/master/big_scape/benchmarking/benchmark_metrics.py>
@@ -309,10 +350,13 @@ first/last conflicting label, or assume family folders settle every conflict.
 Determine whether a conflict represents multiple biological units in one region,
 overlapping family membership, a naming collision, or a curation inconsistency.
 
-## Current stage: B/E pilot and remaining dataset preparation
+## Current stage: B/E baseline clustering and remaining dataset preparation
 
-The first inventory step is complete. B/E are selected for a frozen feature pilot;
-label adjudication, parser repairs and cohort selection for other sets remain open.
+The first inventory step, B/E server frozen feature extraction and G/H processed
+coordinate repairs are complete. G/H encoder input compatibility and extraction
+orchestration are now checked; actual G/H inference remains for the server.
+Label adjudication, compatibility handling and
+cohort selection for A/C/D/F/I remain open.
 The B/E workflow preserves all 39/281 entries, including singletons and cross-set
 duplicates, without length filtering or annotation repair. It is not a train/test split.
 Confirm consequential unresolved biological policies through source evidence and
@@ -353,14 +397,15 @@ Keep unresolved cases in the inventory with explicit coverage consequences.
 Dataset-preparation deliverables are the versioned input/protocol specification,
 persistent manifest, duplicate and label-conflict inventories, evidence-based
 compatibility policy and repair/exclusion records, and a proposed evaluation
-cohort with coverage counts. B/E additionally has server extraction scripts and a
-prepared cohort. No GPU encoding results, clustering, retrieval scores, model
-training or DNA/protein fusion results have been produced.
+cohort with coverage counts. B/E additionally has a prepared cohort, returned
+server feature exports, two completed clustering sweeps and a V-measure summary.
+Retrieval scores, model training and DNA/protein fusion results remain pending.
 
 ## Future research roadmap (design only; not current tasks)
 
-The following stages record discussed options for later work. Only the B/E server
-feature-script subset is currently authorized and implemented; the other directions
+The following stages record discussed options for later work. B/E server feature
+scripts and the original-cosine average/Leiden baselines are authorized and implemented.
+PCA + average-linkage is additionally authorized as recorded above; the other directions
 do not authorize starting experiments. A candidate
 sequence is frozen baselines with multiple clusterers, then learned BGC aggregation
 or metric learning, then ESM2 fine-tuning comparisons, followed by renewed DNA
@@ -406,7 +451,9 @@ and explicitly report eligible-query coverage, rather than scoring them as zero.
 
 ### 3. Multiple clustering methods and BiG-SCAPE baselines
 
-The user explicitly wants multiple clustering methods. Average linkage remains
+The user explicitly wants multiple clustering methods in the longer-term plan.
+The current PCA experiment is limited to average-linkage; do not extend its grid
+to Leiden. Average linkage remains
 one reference method, not the sole permitted clustering algorithm. Candidate
 routes with different assumptions are:
 
@@ -601,12 +648,13 @@ duplicate groups retain sample/record membership. No entries were removed or
 repaired and there is no DNA length filtering. A preliminary generated inventory
 is retained under `data/processed/_history/`; `inventory_v1/` is the current output.
 
-For datasets other than B/E, subsequent preparation should inspect conflicts and failure
+For A/C/D/F/I, subsequent preparation should inspect conflicts and failure
 records to define evidence-based label/compatibility policies, then produce an
 audited evaluation cohort. Do not jump to future clustering, fine-tuning, or fusion
 because those branches are documented above.
 B and E are the user-selected pilots (39 and 281 files). F remains a candidate
-requiring an explicit duplicate policy. Extend to C/D/G/H after compatibility
+requiring an explicit duplicate policy. G/H repaired inputs now pass CPU parsers
+and have an extraction preparation path. Extend to C/D after compatibility
 handling and to A/I after identity/label resolution. If pilot labels influence model selection, do not later call those
 same datasets untouched test sets.
 
@@ -638,10 +686,194 @@ and reproducible scripts/tests. Policies for this inventory are documented in th
 README and metadata. Still pending: biological conflict resolution, actual repair
 or exclusion decisions, and the final input/evaluation protocol and cohort.
 
-Pending server outputs: B/E per-route feature exports. Future outputs beyond this pilot: per-query retrieval metrics,
-per-family/per-dataset summaries, multi-method clustering comparisons and parameter
-curves, adaptation/fusion ablations, and an analysis report with reproduction
-commands. These later analyses are outside the current B/E feature-script task.
+Verified local outputs: B/E per-route feature exports, both baseline clustering
+sweeps and their V-measure comparison. Future outputs beyond these baselines
+include per-query retrieval metrics, additional clusterers and adaptation/fusion
+ablations. These remain outside the current comparison task.
+
+### Implemented original-cosine clustering baselines
+
+- `scripts/clustering_common.py` reads native `embeddings.npy`, `bgc_ids.tsv`,
+  `metadata.json`, `failures.tsv` and joins with `pilot_be_v1/cohort.tsv`. Explicit
+  row indices locate vectors; stable IDs determine common ordering. Server paths
+  in provenance need not exist locally. No hidden intersections or label stripping.
+- `scripts/cluster_average.py`: SciPy average linkage on condensed original cosine
+  distances, default cuts at zero and all distinct merge heights. Saves full tree,
+  row/leaf mappings, memberships, metrics and diagnostic figures. No truth-based
+  cut selection; ties need not yield every possible cluster count.
+- `scripts/cluster_leiden.py`: exact cosine kNN, default union graph, positive
+  cosine weights counted once per undirected edge, RBConfiguration Leiden.
+  Defaults k=5/10/15, resolution=0.25/0.5/1/2/4/8, seeds=0..4. Isolates remain
+  separate singletons. Reports every setting and seed, plus pairwise seed ARI.
+- Both operate in original embedding space with no PCA/UMAP. Metrics include
+  homogeneity, completeness, V-measure, ARI, AMI, cosine silhouette, cluster and
+  singleton counts, and full coverage. Raw GCF strings are evaluation-only.
+- On 2026-11-11 both default scripts completed on all six real B/E exports:
+  `data/processed/clustering_average_v1/` contains 960 cut results, and
+  `data/processed/clustering_leiden_v1/` contains 540 parameter/seed results.
+  Every setting retains B=39/E=281. Sixty-six tests passed; independent output
+  checks confirmed memberships/IDs/labels/cluster counts, artifact/source hashes,
+  and bitwise-identical cosine matrices between the two baselines. These are
+  diagnostic sweeps; no best-performing configuration or model has been selected.
+- `docs/clustering_baselines.md` contains commands and interpretation limits;
+  `requirements-clustering.txt` pins the tested CPU dependencies. No test-label
+  optimum is automatically selected by the clustering scripts. The separate
+  summary below uses true family counts for a diagnostic comparison.
+
+### Implemented B/E V-measure comparison
+
+- `scripts/summarize_vmeasure.py` verifies clustering artifact hashes and recomputes
+  homogeneity, completeness, V-measure and ARI for all 1500 membership partitions
+  against unchanged cohort labels, agreeing within `1e-12`. Coverage is complete:
+  B has 39 BGCs / 23 GCFs; E has 281 BGCs / 90 GCFs.
+- Average selects the nearest true GCF count, breaking ties by smaller threshold;
+  all six results match the target exactly. For each fixed Leiden k, selection
+  minimizes mean `abs(K - true_GCF_count)` across all five seeds, breaking ties
+  by smaller resolution. The short table displays k=10, the original grid's middle
+  value; k=5/10/15 are all retained. Neither rule maximizes V-measure. This is
+  label-informed diagnosis, not independent parameter selection or generalization.
+- Average BGC-MAC V-measure is 0.870008 on B and 0.813323 on E, higher than ESM2
+  and DNA for this selection rule. E's existing Leiden grid reaches at most 50
+  clusters, below its 90 true families; it is not yet a matched-resolution test.
+  All-singleton controls and ARI are retained because V-measure is not adjusted
+  for chance. Four additional summary selection tests passed.
+- `data/processed/vmeasure_comparison_v1/summary.md` and `comparison.png` contain
+  the report/figure; TSVs retain all fixed-k results and exploratory max-V results
+  separately. Reproduction commands are in README. Choose a new `--output` path
+  because the summarizer refuses to overwrite an existing report.
+- Eighteen author-published B/E scores are imported from Zenodo record 16838820:
+  BiG-SCAPE 1 global/glocal, and BiG-SCAPE 2 global plus local/glocal with three
+  extension modes. This is an external reference, not a local BiG-SCAPE rerun.
+  Logs have matching nominal sample counts, but effective sample IDs are not
+  verified and some exported confusion matrices have incomplete counts. Consult
+  `sources/provenance.json` before making any strict same-cohort claim.
+
+### B/E PCA + average-linkage experiment
+
+- `scripts/cluster_pca_average.py` uses the same strict native feature loader and
+  unchanged B/E cohort as the raw-space baselines. It fits mean-centered full SVD
+  PCA separately per dataset/route, without per-feature scaling or whitening,
+  then L2-normalizes projected rows before cosine + existing average linkage.
+- Default fixed dimensions are 2/4/8/16/32/64/128/256 and variance targets are
+  0.90/0.95/0.99. Raw, centered-only and full numerical-rank PCA controls separate
+  centering from truncation effects. Variance ratios describe centered input
+  variance before post-projection L2, not family information or performance.
+- Rank is bounded by `min(N-1,D)` and numerical SVD tolerance. Oversized dimension
+  requests are recorded as skipped, never silently clamped. Duplicate selectors
+  reaching the same dimension share one condition. Zero/near-zero projected rows
+  fail the entire condition explicitly; no sample is dropped to salvage a score.
+- Every condition scans all distinct merge heights plus zero, then summarizes
+  the closest true family count with smaller-threshold ties. Labels do not enter
+  PCA or tree building. All dimensions remain reported; 95% is a predefined
+  short-table display, not the best V-measure dimension.
+- Fitting PCA on the full unlabeled cohort is transductive. This diagnostic uses
+  family counts in cut selection and is not an independent generalization score.
+  The current step runs average-linkage only, with no Leiden or model inference.
+- Output defaults to `data/processed/clustering_pca_average_v1/`; retains fitted
+  transforms, aligned sample mappings, condition vectors/distances/trees,
+  memberships, all-cut metrics, matched metrics, plots and provenance. See
+  `docs/pca_average.md`.
+- On 2026-11-12 the default real B/E run completed: 72 conditions and 12,488
+  all-height cut partitions; 9 oversized B dimension requests skipped, with no
+  failed conditions. Every partition retains all B=39/E=281 samples. Six raw
+  reference checks passed against the prior average run, including bitwise-equal
+  distances and metrics within `1e-12`. Independent checks recomputed H/C/V/ARI
+  for all 72 selected memberships, verified nearest-family-count selection and
+  output hashes; full-rank versus centered-only cosine errors were below `3e-15`.
+  Twenty-seven related tests passed (PCA core/pipeline, shared inputs and average
+  hierarchy); this step ran no Leiden analysis or Leiden tests.
+- The fixed 95% variance display does not improve every route: for B/E, ESM2
+  V-measure is 0.8327/0.8057, MAC 0.8674/0.8011 and DNA 0.7754/0.7588. E/ESM2's
+  increase over raw (0.7904) is already mostly present in centered-only (0.8060).
+  Consult the complete dimension curves and centered controls before attributing
+  a gain to dimensionality truncation; no best-performing dimension was adopted.
+
+### G/H coordinate repair in processed copies
+
+- The implemented entry point is `scripts/repair_gh.py`, using
+  `scripts/domain_coordinate_repair.py`. The real run was published on 2026-11-19
+  to `data/processed/repaired_gh_v1/`, with status complete and all 101 G/H GBKs.
+- G has 266 repaired domains in 5/11 files (50 aSDomain, 216 PFAM_domain); H has
+  618 repaired aSDomains in 15/90 files. Across 884 genomic endpoint corrections,
+  866 also increment explicit protein_end; 18 G domains receive only a genomic
+  correction and retain absent protein-coordinate qualifiers. The other 81 GBKs
+  and both label TSVs are byte-identical to raw.
+- Protein parsing improves from G=8/11 and H=75/90 to G=11/11 and H=90/90;
+  DNA parsing passes all 101. All 2941 raw files match inventory and before/after
+  SHA256 snapshots. Checks cover 5039 domain annotations; 2 remain needs_review.
+  A second repair plan on each output proposes no changes. Original inventory
+  failures still describe raw inputs; read repaired samples.tsv for current status.
+  Thirteen focused core/workflow tests passed, covering strand-aware byte edits,
+  unsupported evidence, preservation checks, output path protection and failure
+  without publishing a partial result.
+- Repair only sequence-proven `aSDomain` / `PFAM_domain` C-terminal endpoint errors: require a
+  unique same-strand containing CDS, agreement with its protein interval, raw
+  domain DNA translating to the annotated sequence minus its final residue, and
+  a one-codon extension translating exactly to the complete annotated sequence.
+  The proposed location must match parent CDS coordinate/frame mapping.
+- For explicit inclusive protein ends, jointly increment `protein_end` by one
+  and extend genomic end by three bases on the plus strand or genomic start by
+  minus three on the minus strand. Domains lacking protein coordinates can have
+  genomic-only fixes when unique translation matching proves the interval;
+  do not add absent protein-coordinate qualifiers or apply a blanket increment.
+- Preserve feature types: repaired `PFAM_domain` entries remain Pfam annotations,
+  not new ESM aSDomain tokens. Two orphan Pfam annotations in H `ApSA.gbk` have no
+  supported parent CDS and are retained unchanged as `needs_review`; protein-parser
+  compatibility does not establish that all biological annotation issues are solved.
+- Preserve raw files and the original inventory; make only necessary numeric
+  byte edits in GBK copies. Preserve DNA, CDS/domain translations, other
+  annotations, original filenames, family labels and complete G/H membership.
+  Retain byte-identical copies for unaffected files and labels.
+- Publish to a new directory strictly under `data/processed/` only after all
+  repaired GBKs pass existing protein and DNA parsers, semantic preservation
+  checks and raw before/after integrity verification. Record `samples.tsv`,
+  `domain_checks.tsv`, `repairs.tsv`, `raw_integrity.tsv`, per-dataset counts and
+  provenance hashes. No encoder parser/model modifications or sample exclusions.
+- The repair snapshot itself is not a prepared encoder directory. Use the new
+  `pilot_features.py prepare-repaired` bridge described below. No G/H feature
+  extraction or clustering is claimed by this repair step.
+
+### G/H encoder compatibility and server workflow
+
+- The real preparation has completed at `data/processed/pilot_gh_v1/`, metadata
+  status complete. Loading the published cohort validates all G=11/H=90 rows;
+  a temporary relocated copy was also checked without its original source paths.
+  See [input summary](data/processed/pilot_gh_v1/summary.md). Eleven G/H preparation
+  tests and eighteen existing extraction/validator tests pass. Existing B/E six
+  exports also pass the updated validator, and the nine local encoder source
+  hashes match their recorded B/E run versions.
+- Existing BGC_annotation ESM2/MAC/DNA interfaces accept all repaired inputs in
+  CPU parser checks: G=11 BGCs/3 GCFs, H=90 BGCs/10 GCFs. No encoder or parser
+  modification is needed. This does not establish checkpoint/GPU inference success.
+- `scripts/prepare_repaired_features.py`, called by
+  `pilot_features.py prepare-repaired`, validates the complete repair artifact
+  hashes, sample/repair/label consistency and GBK membership. It copies processed
+  bytes under stable sample IDs, checks protein/DNA inputs with current parsers,
+  and prepares `bgc_repaired_pilot_inputs_v1` metadata, `cohort.tsv`,
+  `input_checks.tsv`, a summary and embedded `repair_provenance/` manifests/labels.
+- In the new cohort, `source_sha256` is the actual processed GBK hash used by all
+  output validators; `raw_source_sha256` is separate original-backup provenance.
+  Preserve all 101 entries and raw Unicode labels; no filtering or exclusions.
+  The complete prepared directory is portable to the server: validation does not
+  require original local raw/repaired absolute paths. Existing B/E format and
+  commands remain supported; raw `prepare` still accepts only B/E.
+- G DNA spans 15,484–76,182 bp with 15–71 protein/domain tokens per BGC; H spans
+  43,475–99,572 bp with 13–92 tokens. G has no token above 1021 aa. H has 156 such
+  tokens across 42 BGCs, maximum 9508 aa. ESM2 covers them with the existing
+  disjoint 1021-aa window policy, then residue-weighted pooling restores one
+  vector per input token; MAC still receives at most 92 tokens per H BGC.
+- H retains 246 N bases; G has no ambiguous bases in the audited inputs. DNA
+  remains full/FA2/BF16 with no bp/token cap. Prior B/E full-DNA exports include
+  successful inputs up to 185,250 bp; G/H actual BPE lengths/VRAM remain to be
+  measured on the server. Do not silently switch to windowed after OOM.
+- Reuse the B/E ESM2 checkpoint, MAC member 0, DNA checkpoint/tokenizer and server
+  environment; preserve code/model hashes in the new run. MAC consumes this run's
+  ESM cache. `extract` and `validate` require all G=11/H=90 rows per route and
+  the same native arrays/ID/metadata/failure format. Commands: `docs/gh_features.md`.
+- No G/H embeddings, V-measure, BiG-SCAPE execution or model training are claimed.
+  The clustering/PCA/score scripts still register only B/E; extend their cohort
+  handling after G/H features return before analysis. Continue with average/PCA
+  under the user's current preference; do not add further Leiden tests.
 
 The 2026-11-02 audit was originally read-only inline Python. Its major counts and
 single-file parser outcomes have now been revalidated by the persistent inventory
